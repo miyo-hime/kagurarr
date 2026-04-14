@@ -2,7 +2,7 @@
 
 [![Primary Repo](https://img.shields.io/badge/primary-Kurobox-purple?logo=forgejo)](https://codex.kurobox.me/miyo-rin/kagurarr)
 [![GitHub Mirror](https://img.shields.io/badge/mirror-GitHub-gray?logo=github)](https://github.com/miyo-hime/kagurarr)
-![Version](https://img.shields.io/badge/v0.1.0-orange)
+![Version](https://img.shields.io/badge/v0.1.5-orange)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![Built with Rust](https://img.shields.io/badge/Rust-CE412B?logo=rust&logoColor=white)
 
@@ -14,35 +14,48 @@ named after 神楽 (kagura) - the sacred music ritual that bridges human and div
 
 you have Lidarr. you have slskd. you want them to talk to each other automatically. that's what this does.
 
-every N minutes it checks Lidarr's wanted list, searches Soulseek for each album, picks the best match it can find, downloads it, and tells Lidarr to import it. if Lidarr goes "nope, wrong album" - it remembers that, blacklists the candidate, and tries the next best option instead of just... grabbing the same wrong thing again forever.
+every N minutes it checks Lidarr's wanted list, searches Soulseek for each album, picks the best match it can find, downloads it, stages it, and tells Lidarr to import it. if Lidarr says no - it blacklists that candidate, tries the next one, and never touches the same bad match again.
 
 - **searches `{artist} {album}`** not just the album title - way fewer false positives
-- **sqlite blacklist** by `(album_id, user, folder)` - survives restarts, never retries a known-bad match
+- **sqlite blacklist** by `(album_id, user, folder)` - survives restarts
 - **configurable minimum score** (default 0.75) - low-confidence matches get skipped
-- **works through candidates** before giving up - rejection just means "try the next one"
-- **blacklist TTL** - failed matches expire after 30 days, because new sharers appear
-- **stall detection** - if a download stops making progress, cancel it and move on
-- **structured logging** via `tracing` so you can actually tell what it's doing
+- **blacklist TTL** - failed matches expire after 30 days, new sharers appear
+- **stall detection** - if a download stops moving, cancel and try the next candidate
+- **automatic cleanup** - leftover failed download folders get deleted after 2h
+
+## you need
+
+- [Lidarr](https://lidarr.audio) set up and running with your music library
+- [slskd](https://github.com/slskd/slskd) running with a Soulseek account
+- the three containers able to see the same download directory (see below)
+- API keys for both
+
+if you don't know what Lidarr or Soulseek are, you've got some reading to do first. this tool assumes you're already past that part.
 
 ## setup
 
 ```bash
 cp config.example.toml data/config.toml
-# fill in your api keys
+# fill in urls + api keys, adjust the volume path in docker-compose.yml
 docker compose up -d
 ```
 
-see `config.example.toml` for all the options. only `[lidarr]` and `[slskd]` are required, everything else has sane defaults.
+see `config.example.toml` for all options. only `[lidarr]` and `[slskd]` are required.
 
-set `RUST_LOG=kagurarr=debug` if you want to see what's going on under the hood.
+set `RUST_LOG=kagurarr=debug` to see what's happening under the hood.
 
-## docker notes
+## the download directory problem
 
-the `/downloads` volume needs to be the same physical directory that slskd downloads into AND that Lidarr watches for imports - all three containers need to agree on where that is. if Lidarr can't see the files kagurarr just downloaded, imports will silently fail.
+all three containers (kagurarr, slskd, Lidarr) need to be able to see the same physical folder. kagurarr downloads via slskd, stages files there, then tells Lidarr to import from that path.
 
-if you're on a network where your containers can reach each other by name (e.g. a shared Docker network), you can use container names directly in the urls - `http://lidarr:8686`, `http://slskd:5030`. otherwise use IPs or hostnames.
+in `docker-compose.yml`, set the volume to point at slskd's download directory:
+```yaml
+- /path/to/slskd/downloads:/downloads
+```
 
-kagurarr doesn't need to run as root. running it as the same user that owns your media files is a good idea.
+if Lidarr mounts that directory at a **different path** than `/downloads`, set `download_dir` under `[lidarr]` in your config so kagurarr tells Lidarr the right path. if all three containers use the same mount, you can skip it.
+
+kagurarr doesn't need to run as root. running as the same user that owns your media files is a good idea.
 
 ## stack
 

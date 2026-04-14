@@ -21,6 +21,7 @@ preferred_formats = ["flac", "mp3"]
 max_albums_per_run = 10
 blacklist_ttl_days = 30      # retry failed matches after this many days (new sharers appear)
 stall_timeout_secs = 300     # give up on a download if it hasn't moved in this long
+cleanup_downloads_after_secs = 7200  # delete leftover folders after this long (default 2h)
 
 # optional: give these users a small score bonus
 # useful if you know someone who reliably shares good J-music rips

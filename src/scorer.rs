@@ -1,7 +1,6 @@
 use crate::slskd::{SearchResponse, SlskdFile};
 use strsim::jaro_winkler;
 
-/// a candidate download - one user's folder worth of files
 #[derive(Debug, Clone)]
 pub struct Candidate {
     pub username: String,
@@ -38,7 +37,6 @@ pub fn rank_candidates(
         .filter(|c| c.score >= min_score)
         .collect();
 
-    // best first
     candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     candidates
 }

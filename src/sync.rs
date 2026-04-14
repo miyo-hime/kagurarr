@@ -18,7 +18,6 @@ pub async fn run_cycle(
     lidarr: &LidarrClient,
     slskd: &SlskdClient,
 ) -> Result<()> {
-    // clean up old failures so we retry them eventually
     let pruned = db.prune_expired(cfg.kagurarr.blacklist_ttl_days)?;
     if pruned > 0 {
         info!("pruned {pruned} expired blacklist entries");
@@ -26,7 +25,6 @@ pub async fn run_cycle(
 
     let mut wanted = lidarr.wanted_albums().await?;
 
-    // skip albums we've already handled
     wanted.retain(|a| !db.is_done(a.id).unwrap_or(false));
     wanted.truncate(cfg.kagurarr.max_albums_per_run);
 
@@ -47,10 +45,11 @@ pub async fn run_cycle(
         }
     }
 
-    // clear completed transfers from slskd's queue at the end of each cycle
     if let Err(e) = slskd.remove_completed_downloads().await {
         warn!("failed to clear completed transfers: {e:#}");
     }
+
+    cleanup_stale_downloads(&cfg.slskd.download_dir, cfg.kagurarr.cleanup_downloads_after_secs);
 
     Ok(())
 }
@@ -120,7 +119,6 @@ async fn process_album(
                     BlacklistStatus::Failed,
                     Some("lidarr_rejected"),
                 )?;
-                // keep going - try the next one
             }
             Err(e) => {
                 warn!("candidate failed: {e:#}");
@@ -131,7 +129,6 @@ async fn process_album(
                     BlacklistStatus::Failed,
                     Some("download_error"),
                 )?;
-                // keep going - try the next one
             }
         }
     }
@@ -225,6 +222,43 @@ fn stage_download(
     info!("staged download folder: {current_path} -> {staging_path}");
 
     Ok(staging_path)
+}
+
+/// delete folders in the download dir that haven't been touched in a while.
+/// lidarr moves files out on successful import; anything left is a failed/abandoned download.
+fn cleanup_stale_downloads(download_dir: &str, threshold_secs: u64) {
+    let dir = match std::fs::read_dir(download_dir) {
+        Ok(d) => d,
+        Err(e) => {
+            warn!("couldn't read download dir for cleanup: {e}");
+            return;
+        }
+    };
+
+    let threshold = std::time::Duration::from_secs(threshold_secs);
+    let now = std::time::SystemTime::now();
+
+    for entry in dir.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let age = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|modified| now.duration_since(modified).ok());
+
+        if let Some(age) = age {
+            if age > threshold {
+                match std::fs::remove_dir_all(&path) {
+                    Ok(()) => info!("cleaned up stale download: {}", path.display()),
+                    Err(e) => warn!("couldn't remove {}: {e}", path.display()),
+                }
+            }
+        }
+    }
 }
 
 fn sanitize_folder_name(name: &str) -> String {

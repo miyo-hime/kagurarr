@@ -40,6 +40,8 @@ pub struct KagurConfig {
     pub blacklist_ttl_days: u64,
     #[serde(default = "default_stall_timeout")]
     pub stall_timeout_secs: u64,
+    #[serde(default = "default_cleanup_after")]
+    pub cleanup_downloads_after_secs: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,6 +57,7 @@ fn default_formats() -> Vec<String> { vec!["flac".into(), "mp3".into()] }
 fn default_max_albums() -> usize { 10 }
 fn default_blacklist_ttl_days() -> u64 { 30 }
 fn default_stall_timeout() -> u64 { 300 }
+fn default_cleanup_after() -> u64 { 7200 } // 2 hours - anything older than this is probably abandoned
 fn default_db_path() -> String { "/data/kagurarr.db".into() }
 
 pub fn load(path: &str) -> Result<Config> {
