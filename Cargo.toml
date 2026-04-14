@@ -1,6 +1,6 @@
 [package]
 name = "kagurarr"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "lidarr + soulseek bridge."
 license = "Apache-2.0"
@@ -39,3 +39,6 @@ uuid = { version = "1", features = ["v4"] }
 
 # timestamps
 chrono = { version = "0.4", features = ["serde"] }
+
+# audio tag writing (for stamping albumartist/album before lidarr import)
+lofty = "0.24"

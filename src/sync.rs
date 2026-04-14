@@ -1,4 +1,8 @@
 use anyhow::Result;
+use lofty::config::WriteOptions;
+use lofty::prelude::*;
+use lofty::probe::Probe;
+use lofty::tag::{ItemKey, ItemValue, Tag, TagItem};
 use tracing::{info, instrument, warn};
 
 use crate::blacklist::{Blacklist, BlacklistStatus};
@@ -140,7 +144,7 @@ async fn try_candidate(
     cfg: &Config,
     lidarr: &LidarrClient,
     slskd: &SlskdClient,
-    _album: &WantedAlbum,
+    album: &WantedAlbum,
     candidate: &Candidate,
 ) -> Result<ImportResult> {
     slskd.download(&candidate.username, &candidate.files).await?;
@@ -163,10 +167,70 @@ async fn try_candidate(
         slskd_path.clone()
     };
 
+    stamp_tags(&slskd_path, &album.artist.artist_name, &album.title);
     info!("download done, triggering lidarr import at {lidarr_path}");
 
     let command_id = lidarr.trigger_import(&lidarr_path).await?;
     let result = lidarr.poll_command(command_id).await?;
 
     Ok(result)
+}
+
+/// stamp albumartist + album onto every audio file in the download folder before handing to lidarr.
+/// lidarr's DownloadedAlbumsScan is tag-dependent - without correct tags it matches 0 tracks.
+/// errors are non-fatal: if tagging fails we warn and let lidarr try anyway.
+fn stamp_tags(local_dir: &str, artist: &str, album: &str) {
+    let dir = match std::fs::read_dir(local_dir) {
+        Ok(d) => d,
+        Err(e) => {
+            warn!("couldn't read download dir for tagging: {e}");
+            return;
+        }
+    };
+
+    for entry in dir.flatten() {
+        let path = entry.path();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        const AUDIO_EXTS: &[&str] = &[
+            "flac", "mp3", "ogg", "opus", "m4a", "aac", "wav", "wv", "ape", "aiff",
+        ];
+        if !AUDIO_EXTS.contains(&ext.as_str()) {
+            continue;
+        }
+
+        let result = (|| -> anyhow::Result<()> {
+            let mut tagged_file = Probe::open(&path)?.read()?;
+            let tag = match tagged_file.primary_tag_mut() {
+                Some(t) => t,
+                None => match tagged_file.first_tag_mut() {
+                    Some(t) => t,
+                    None => {
+                        let tag_type = tagged_file.primary_tag_type();
+                        tagged_file.insert_tag(Tag::new(tag_type));
+                        tagged_file.primary_tag_mut().unwrap()
+                    }
+                },
+            };
+
+            tag.set_artist(artist.to_string());
+            tag.set_album(album.to_string());
+            tag.insert(TagItem::new(
+                ItemKey::AlbumArtist,
+                ItemValue::Text(artist.to_string()),
+            ));
+
+            tag.save_to_path(&path, WriteOptions::default())?;
+            Ok(())
+        })();
+
+        match result {
+            Ok(()) => tracing::debug!("tagged: {}", path.display()),
+            Err(e) => warn!("couldn't tag {}: {e}", path.display()),
+        }
+    }
 }
