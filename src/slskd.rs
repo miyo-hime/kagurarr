@@ -3,7 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Instant;
-use tracing::instrument;
+use tracing::{instrument, warn};
 use uuid::Uuid;
 
 pub struct SlskdClient {
@@ -258,7 +258,12 @@ impl SlskdClient {
                     || state.contains("Rejected")
                     || state.contains("TimedOut")
                 {
-                    bail!("transfer hit terminal state '{}' for {}", f.state, f.filename);
+                    if is_audio_file(&f.filename) {
+                        bail!("transfer hit terminal state '{}' for {}", f.state, f.filename);
+                    } else {
+                        // sidecar failed (nfo, jpg, cue, etc.) - not our problem, keep going
+                        warn!("sidecar errored, ignoring: {} ({})", f.filename, f.state);
+                    }
                 }
             }
 
@@ -282,6 +287,16 @@ impl SlskdClient {
             }
         }
     }
+}
+
+/// audio extensions we actually care about. anything else is a sidecar.
+fn is_audio_file(filename: &str) -> bool {
+    const AUDIO_EXTS: &[&str] = &[
+        "flac", "mp3", "ogg", "opus", "m4a", "aac", "wav", "wv", "ape", "alac", "aiff",
+    ];
+    let lower = filename.to_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or("");
+    AUDIO_EXTS.contains(&ext)
 }
 
 /// derive the local folder path where slskd put the files.
