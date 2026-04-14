@@ -2,7 +2,7 @@
 
 [![Primary Repo](https://img.shields.io/badge/primary-Kurobox-purple?logo=forgejo)](https://codex.kurobox.me/miyo-rin/kagurarr)
 [![GitHub Mirror](https://img.shields.io/badge/mirror-GitHub-gray?logo=github)](https://github.com/miyo-hime/kagurarr)
-![Version](https://img.shields.io/badge/v0.1.5-orange)
+![Version](https://img.shields.io/badge/v0.1.6-orange)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![Built with Rust](https://img.shields.io/badge/Rust-CE412B?logo=rust&logoColor=white)
 
