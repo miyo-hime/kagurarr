@@ -159,21 +159,81 @@ async fn try_candidate(
         )
         .await?;
 
+    // rename the folder to "Artist - Album (Year)" before import.
+    // lidarr uses the folder name as the primary artist lookup - a random user's folder name won't match.
+    let staged_path = match stage_download(
+        &cfg.slskd.download_dir,
+        &slskd_path,
+        &album.artist.artist_name,
+        &album.title,
+        album.year(),
+    ) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!("couldn't stage download folder: {e:#} - proceeding with original path");
+            slskd_path.clone()
+        }
+    };
+
+    stamp_tags(&staged_path, &album.artist.artist_name, &album.title);
+
     // lidarr might mount the downloads at a different path than slskd does.
     // if lidarr.download_dir is set, swap the prefix; otherwise use what slskd gave us.
     let lidarr_path = if let Some(lidarr_dir) = &cfg.lidarr.download_dir {
-        slskd_path.replacen(&cfg.slskd.download_dir, lidarr_dir, 1)
+        staged_path.replacen(&cfg.slskd.download_dir, lidarr_dir, 1)
     } else {
-        slskd_path.clone()
+        staged_path.clone()
     };
 
-    stamp_tags(&slskd_path, &album.artist.artist_name, &album.title);
     info!("download done, triggering lidarr import at {lidarr_path}");
 
     let command_id = lidarr.trigger_import(&lidarr_path).await?;
     let result = lidarr.poll_command(command_id).await?;
 
     Ok(result)
+}
+
+/// move the download folder to a standardized "Artist - Album (Year)" name before import.
+/// lidarr's ProcessFolder uses the folder name to look up the artist - a random soulseek folder name won't match.
+fn stage_download(
+    download_dir: &str,
+    current_path: &str,
+    artist: &str,
+    album: &str,
+    year: Option<u32>,
+) -> anyhow::Result<String> {
+    let folder_name = match year {
+        Some(y) => format!("{artist} - {album} ({y})"),
+        None => format!("{artist} - {album}"),
+    };
+    let staging_path = format!(
+        "{}/{}",
+        download_dir.trim_end_matches('/'),
+        sanitize_folder_name(&folder_name)
+    );
+
+    if current_path == staging_path {
+        return Ok(staging_path);
+    }
+
+    // clean up leftover staging folder from a previous failed attempt
+    if std::path::Path::new(&staging_path).exists() {
+        std::fs::remove_dir_all(&staging_path)?;
+    }
+
+    std::fs::rename(current_path, &staging_path)?;
+    info!("staged download folder: {current_path} -> {staging_path}");
+
+    Ok(staging_path)
+}
+
+fn sanitize_folder_name(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c => c,
+        })
+        .collect()
 }
 
 /// stamp albumartist + album onto every audio file in the download folder before handing to lidarr.

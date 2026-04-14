@@ -15,6 +15,17 @@ pub struct WantedAlbum {
     pub id: i64,
     pub title: String,
     pub artist: Artist,
+    // "2023-07-27T00:00:00Z" - we just want the year
+    pub release_date: Option<String>,
+}
+
+impl WantedAlbum {
+    pub fn year(&self) -> Option<u32> {
+        self.release_date
+            .as_deref()
+            .and_then(|d| d.get(..4))
+            .and_then(|y| y.parse().ok())
+    }
 }
 
 #[derive(Debug, Deserialize)]
