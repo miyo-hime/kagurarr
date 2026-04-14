@@ -62,7 +62,6 @@ impl Blacklist {
         Ok(count > 0)
     }
 
-    /// check if an album is already marked done
     pub fn is_done(&self, album_id: i64) -> Result<bool> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM blacklist

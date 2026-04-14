@@ -1,5 +1,5 @@
 # stage 1: build
-FROM rust:1.82-slim AS builder
+FROM rust:latest AS builder
 
 WORKDIR /build
 

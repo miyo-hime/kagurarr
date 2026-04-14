@@ -43,6 +43,11 @@ pub async fn run_cycle(
         }
     }
 
+    // clear completed transfers from slskd's queue at the end of each cycle
+    if let Err(e) = slskd.remove_completed_downloads().await {
+        warn!("failed to clear completed transfers: {e:#}");
+    }
+
     Ok(())
 }
 

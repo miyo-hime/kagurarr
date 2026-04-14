@@ -39,12 +39,6 @@ struct SearchStatus {
 }
 
 #[derive(Debug, Serialize)]
-struct DownloadRequest<'a> {
-    username: &'a str,
-    files: Vec<DownloadFile<'a>>,
-}
-
-#[derive(Debug, Serialize)]
 struct DownloadFile<'a> {
     filename: &'a str,
     size: u64,
@@ -67,6 +61,7 @@ struct TransferDirectory {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TransferFile {
+    id: String,
     filename: String,
     state: String,
     bytes_transferred: u64,
@@ -86,7 +81,6 @@ impl SlskdClient {
         format!("{}{}", self.base_url, path)
     }
 
-    /// search and return all responses once the search completes
     #[instrument(skip(self), fields(query = %query))]
     pub async fn search(&self, query: &str) -> Result<Vec<SearchResponse>> {
         let id = Uuid::new_v4().to_string();
@@ -139,7 +133,6 @@ impl SlskdClient {
         Ok(responses)
     }
 
-    /// queue files from a single user for download
     #[instrument(skip(self, files), fields(user = %username))]
     pub async fn download(&self, username: &str, files: &[SlskdFile]) -> Result<()> {
         if files.is_empty() {
@@ -152,9 +145,9 @@ impl SlskdClient {
             .collect();
 
         self.client
-            .post(self.url("/api/v0/transfers/downloads"))
+            .post(self.url(&format!("/api/v0/transfers/downloads/{username}")))
             .header("X-API-Key", &self.api_key)
-            .json(&DownloadRequest { username, files: download_files })
+            .json(&download_files)
             .send()
             .await
             .context("slskd download request failed")?
@@ -164,10 +157,54 @@ impl SlskdClient {
         Ok(())
     }
 
+    /// slskd doesn't clean up after itself. call this each cycle or it accumulates a graveyard.
+    #[instrument(skip(self))]
+    pub async fn remove_completed_downloads(&self) -> Result<()> {
+        let all_users: Vec<TransferUser> = self
+            .client
+            .get(self.url("/api/v0/transfers/downloads"))
+            .header("X-API-Key", &self.api_key)
+            .send()
+            .await
+            .context("slskd transfer list failed")?
+            .error_for_status()
+            .context("slskd returned an error listing transfers")?
+            .json()
+            .await
+            .context("couldn't parse transfer list")?;
+
+        let mut removed = 0u32;
+        for user in &all_users {
+            for dir in &user.directories {
+                for file in &dir.files {
+                    if file.state.starts_with("Completed") {
+                        let res = self
+                            .client
+                            .delete(self.url(&format!(
+                                "/api/v0/transfers/downloads/{}/{}",
+                                user.username, file.id
+                            )))
+                            .header("X-API-Key", &self.api_key)
+                            .send()
+                            .await;
+                        if res.is_ok() {
+                            removed += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        if removed > 0 {
+            tracing::info!("cleared {removed} completed transfer(s) from slskd queue");
+        }
+        Ok(())
+    }
+
     /// poll transfers until all our files complete, stall, or error.
     /// returns the local folder path to hand to lidarr for import.
     ///
-    /// slskd downloads to {download_dir}/{username}/{remote_folder_name}/
+    /// slskd downloads to {download_dir}/{remote_folder_name}/ (no username subdir)
     #[instrument(skip(self, files), fields(user = %username))]
     pub async fn poll_until_done(
         &self,
@@ -213,25 +250,26 @@ impl SlskdClient {
             let total_bytes: u64 = our_transfers.iter().map(|f| f.bytes_transferred).sum();
             let total_size: u64 = our_transfers.iter().map(|f| f.size).sum();
 
-            // check for terminal error states first
+            // slskd state strings are compound: "Completed, Succeeded", "Completed, Errored", etc.
             for f in &our_transfers {
-                match f.state.as_str() {
-                    "Errored" | "Cancelled" | "Rejected" | "TimedOut" => {
-                        bail!("transfer hit terminal state '{}' for {}", f.state, f.filename);
-                    }
-                    _ => {}
+                let state = f.state.as_str();
+                if state.contains("Errored")
+                    || state.contains("Cancelled")
+                    || state.contains("Rejected")
+                    || state.contains("TimedOut")
+                {
+                    bail!("transfer hit terminal state '{}' for {}", f.state, f.filename);
                 }
             }
 
-            // all done?
-            let all_complete = our_transfers.iter().all(|f| f.state == "Completed");
+            // all done? state is "Completed, Succeeded" not just "Completed"
+            let all_complete = our_transfers.iter().all(|f| f.state.starts_with("Completed"));
             if all_complete {
                 let local_path = derive_local_path(download_dir, username, files);
                 tracing::info!("download complete ({total_bytes} bytes), import path: {local_path}");
                 return Ok(local_path);
             }
 
-            // stall detection
             if total_bytes > last_bytes {
                 last_bytes = total_bytes;
                 last_progress_at = Instant::now();
@@ -247,18 +285,21 @@ impl SlskdClient {
 }
 
 /// derive the local folder path where slskd put the files.
-/// slskd mirrors: {download_dir}/{username}/{remote_folder_last_component}/
-fn derive_local_path(download_dir: &str, username: &str, files: &[SlskdFile]) -> String {
+/// slskd mirrors the remote folder structure directly under download_dir:
+///   remote: "Music\Artist\Album\track.flac"
+///   local:  {download_dir}/Album/track.flac
+/// no username subdirectory.
+fn derive_local_path(download_dir: &str, _username: &str, files: &[SlskdFile]) -> String {
     // grab the folder name from the first file's remote path
-    // remote paths are backslash-separated: "\\server\Artist - Album\01 track.flac"
+    // remote paths are backslash-separated: "Music\Artist\Album\01 track.flac"
     let folder_name = files
         .first()
         .and_then(|f| {
             let parts: Vec<&str> = f.filename.split('\\').collect();
-            // second-to-last component is the folder name
+            // second-to-last component is the immediate folder name
             parts.get(parts.len().saturating_sub(2)).copied()
         })
         .unwrap_or("unknown");
 
-    format!("{}/{}/{}", download_dir.trim_end_matches('/'), username, folder_name)
+    format!("{}/{}", download_dir.trim_end_matches('/'), folder_name)
 }
