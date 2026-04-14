@@ -46,7 +46,7 @@ impl Blacklist {
         Ok(Self { conn })
     }
 
-    /// check if this (album, user, folder) combo is already blacklisted
+    /// been here before. didn't work out.
     pub fn is_blacklisted(&self, album_id: i64, username: &str, folder: &str) -> Result<bool> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM blacklist
@@ -100,7 +100,7 @@ impl Blacklist {
         Ok(())
     }
 
-    /// clean up old failed entries past the TTL so we retry eventually
+    /// forgiveness after ttl_days. we hold grudges, but not forever.
     pub fn prune_expired(&self, ttl_days: u64) -> Result<usize> {
         let cutoff = Utc::now()
             .checked_sub_signed(chrono::Duration::days(ttl_days as i64))

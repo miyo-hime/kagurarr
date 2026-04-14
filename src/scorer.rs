@@ -10,7 +10,9 @@ pub struct Candidate {
     pub score: f64,
 }
 
-/// score and filter candidates from a slskd search response
+/// score candidates and return them sorted best-first, filtered by min_score.
+/// the min_score cutoff is not decorative. it exists because soulseek has
+/// a lot of albums with coincidentally matching track counts and nothing else in common.
 pub fn rank_candidates(
     responses: Vec<SearchResponse>,
     artist: &str,
@@ -51,7 +53,7 @@ fn score_candidate(
 ) -> f64 {
     let mut score = 0.0_f64;
 
-    // only count audio files - skip folder.jpg and friends
+    // only count audio files - folder.jpg does not spark joy and neither does Thumbs.db
     let audio_files: Vec<&SlskdFile> = files.iter().filter(|f| is_audio(f)).collect();
 
     if audio_files.is_empty() {
@@ -61,13 +63,14 @@ fn score_candidate(
     // track count match (0.0-0.3)
     if let Some(expected) = expected_tracks {
         let ratio = audio_files.len() as f64 / expected as f64;
-        // penalize if we're way off, but give some slack for bonus tracks etc.
+        // close enough counts - bonus editions exist, hidden tracks exist, people miscatalog things.
+        // but if the count is wildly off it's probably just a different album entirely.
         let track_score = if ratio >= 0.8 && ratio <= 1.3 {
             0.3
         } else if ratio >= 0.6 {
             0.15
         } else {
-            0.0 // hard pass - track count is too far off
+            0.0 // nope. not even close.
         };
         score += track_score;
     } else {

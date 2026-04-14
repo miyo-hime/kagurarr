@@ -44,9 +44,9 @@ pub struct DatabaseConfig {
     pub path: String,
 }
 
-// defaults so a minimal config.toml still works
+// defaults - a minimal config only needs [lidarr] and [slskd]
 fn default_interval() -> u64 { 600 }
-fn default_min_score() -> f64 { 0.75 }
+fn default_min_score() -> f64 { 0.75 } // don't go lower. you will regret it.
 fn default_formats() -> Vec<String> { vec!["flac".into(), "mp3".into()] }
 fn default_max_albums() -> usize { 10 }
 fn default_blacklist_ttl_days() -> u64 { 30 }
