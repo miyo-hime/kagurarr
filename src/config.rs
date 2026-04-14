@@ -13,6 +13,10 @@ pub struct Config {
 pub struct LidarrConfig {
     pub url: String,
     pub api_key: String,
+    // lidarr sees the download dir at a different path than slskd does (different container mounts).
+    // if unset, falls back to slskd.download_dir - which works if both containers share the same mount path.
+    #[serde(default)]
+    pub download_dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

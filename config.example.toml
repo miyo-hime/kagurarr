@@ -4,6 +4,10 @@
 [lidarr]
 url = "http://lidarr:8686"
 api_key = "your-lidarr-api-key"
+# if lidarr mounts the download directory at a different path than slskd, set this.
+# e.g. slskd sees /downloads but lidarr sees /music/downloads - without this, imports will silently match 0 tracks.
+# if omitted, falls back to slskd.download_dir (fine if both containers share the same mount path).
+# download_dir = "/music/downloads"
 
 [slskd]
 url = "http://slskd:5030"

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::instrument;
+use tracing::{info, instrument};
 
 pub struct LidarrClient {
     client: Client,
@@ -131,6 +131,8 @@ impl LidarrClient {
                     let message = resp.message.unwrap_or_default();
                     // fun fact: lidarr uses status="completed" for both success AND rejection.
                     // the actual outcome is buried in the message text. yes, really.
+                    // log it regardless so we can see what lidarr actually said.
+                    info!("lidarr command {} finished: status={:?} message={:?}", resp.id, resp.status, message);
                     // we string-match on "failed"/"unable" because that's what the api gives us.
                     if message.to_lowercase().contains("failed")
                         || message.to_lowercase().contains("unable")

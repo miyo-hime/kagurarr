@@ -146,7 +146,7 @@ async fn try_candidate(
     slskd.download(&candidate.username, &candidate.files).await?;
 
     // now we wait. fingers crossed.
-    let local_path = slskd
+    let slskd_path = slskd
         .poll_until_done(
             &candidate.username,
             &candidate.files,
@@ -155,9 +155,17 @@ async fn try_candidate(
         )
         .await?;
 
-    info!("download done, triggering lidarr import at {local_path}");
+    // lidarr might mount the downloads at a different path than slskd does.
+    // if lidarr.download_dir is set, swap the prefix; otherwise use what slskd gave us.
+    let lidarr_path = if let Some(lidarr_dir) = &cfg.lidarr.download_dir {
+        slskd_path.replacen(&cfg.slskd.download_dir, lidarr_dir, 1)
+    } else {
+        slskd_path.clone()
+    };
 
-    let command_id = lidarr.trigger_import(&local_path).await?;
+    info!("download done, triggering lidarr import at {lidarr_path}");
+
+    let command_id = lidarr.trigger_import(&lidarr_path).await?;
     let result = lidarr.poll_command(command_id).await?;
 
     Ok(result)
