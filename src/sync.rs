@@ -212,16 +212,7 @@ fn stage_download(
         sanitize_folder_name(&folder_name)
     );
 
-    info!(
-        "staging: current={:?} target={:?} (bytes: {} vs {})",
-        current_path,
-        staging_path,
-        current_path.as_bytes().iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(""),
-        staging_path.as_bytes().iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(""),
-    );
-
     if current_path == staging_path {
-        info!("paths already match, skipping rename");
         return Ok(staging_path);
     }
 

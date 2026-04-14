@@ -61,7 +61,6 @@ struct TransferDirectory {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TransferFile {
-    id: String,
     filename: String,
     state: String,
     bytes_transferred: u64,
@@ -160,44 +159,16 @@ impl SlskdClient {
     /// slskd doesn't clean up after itself. call this each cycle or it accumulates a graveyard.
     #[instrument(skip(self))]
     pub async fn remove_completed_downloads(&self) -> Result<()> {
-        let all_users: Vec<TransferUser> = self
-            .client
-            .get(self.url("/api/v0/transfers/downloads"))
+        self.client
+            .delete(self.url("/api/v0/transfers/downloads/all/completed"))
             .header("X-API-Key", &self.api_key)
             .send()
             .await
-            .context("slskd transfer list failed")?
+            .context("slskd queue clear failed")?
             .error_for_status()
-            .context("slskd returned an error listing transfers")?
-            .json()
-            .await
-            .context("couldn't parse transfer list")?;
+            .context("slskd returned an error clearing completed transfers")?;
 
-        let mut removed = 0u32;
-        for user in &all_users {
-            for dir in &user.directories {
-                for file in &dir.files {
-                    if file.state.starts_with("Completed") {
-                        let res = self
-                            .client
-                            .delete(self.url(&format!(
-                                "/api/v0/transfers/downloads/{}/{}",
-                                user.username, file.id
-                            )))
-                            .header("X-API-Key", &self.api_key)
-                            .send()
-                            .await;
-                        if res.is_ok() {
-                            removed += 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        if removed > 0 {
-            tracing::info!("cleared {removed} completed transfer(s) from slskd queue");
-        }
+        tracing::info!("cleared completed transfers from slskd queue");
         Ok(())
     }
 
