@@ -1,0 +1,26 @@
+# kagurarr config
+# copy this to /data/config.toml and fill in your keys
+
+[lidarr]
+url = "http://lidarr:8686"
+api_key = "your-lidarr-api-key"
+
+[slskd]
+url = "http://slskd:5030"
+api_key = "your-slskd-api-key"
+download_dir = "/downloads"
+
+[kagurarr]
+interval_secs = 600          # how often to check for new wanted albums
+min_score = 0.75             # reject candidates below this - 0.61 is how soularr grabbed kirin's wrong album
+preferred_formats = ["flac", "mp3"]
+max_albums_per_run = 10
+blacklist_ttl_days = 30      # retry failed matches after this many days (new sharers appear)
+stall_timeout_secs = 300     # give up on a download if it hasn't moved in this long
+
+# optional: give these users a small score bonus
+# useful if you know someone who reliably shares good J-music rips
+# preferred_users = ["soliva"]
+
+[database]
+path = "/data/kagurarr.db"

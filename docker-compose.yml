@@ -1,0 +1,15 @@
+services:
+  kagurarr:
+    build: .
+    container_name: kagurarr
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+      # this needs to be the same directory slskd downloads into AND that lidarr watches
+      # all three containers need to see the same physical path or imports won't work
+      - /path/to/slskd/downloads:/downloads
+    environment:
+      - KAGURARR_CONFIG=/data/config.toml
+      - RUST_LOG=kagurarr=info
+    # run as your media user so lidarr can actually read the downloaded files
+    # user: "1000:1000"

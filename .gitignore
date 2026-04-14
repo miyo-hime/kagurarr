@@ -1,0 +1,4 @@
+/target
+/data
+Cargo.lock
+docker-compose.override.yml
